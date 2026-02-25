@@ -1,0 +1,121 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float2 uv_offset;
+uniform float2 uv_scale;
+
+sampler_state textureSampler {
+    Filter 		= Linear;
+    AddressU 	= Clamp;
+    AddressV 	= Clamp;
+};
+
+
+uniform float fAlpha<
+    string label 			= "Visibility";
+    string widget_type 		= "slider";
+    float minimum 			= 0.0;
+    float maximum 			= 0.5;
+    float step 				= 0.01;
+> = 0.2;
+
+uniform float fIntensity<
+    string label 			= "Intensity";
+    string widget_type 		= "slider";
+    float minimum 			= 0.0;
+    float maximum 			= 1.0;
+    float step 				= 0.01;
+> = 0.3;
+
+
+uniform float elapsed_time;
+
+struct vertData {
+    float4 pos : POSITION;
+    float2 uv  : TEXCOORD0;
+};
+
+
+
+vertData mainTransform(vertData v_in)
+{
+	vertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv = v_in.uv * uv_scale + uv_offset;
+	return vert_out;
+}
+
+float hashGet(float2 p)
+{
+    float3 p3 = frac(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return frac((p3.x + p3.y) * p3.z);
+}
+
+float3 rgb_to_yuv(float3 c)
+{
+    float y = dot(c, float3(0.2126, 0.7152, 0.0722));
+    float u = (c.b - y);
+    float v = (c.r - y);
+    return float3(y, u, v);
+}
+
+float3 yuv_to_rgb(float3 yuv)
+{
+    float y = yuv.x;
+    float u = yuv.y;
+    float v = yuv.z;
+    float r = y + v;
+    float b = y + u;
+    float g = (y - 0.2126*r - 0.0722*b) / 0.7152;
+    return float3(r,g,b);
+}
+
+float4 mainImage(vertData v_in) : TARGET
+{
+	float 			fRandomValue;
+	float4 			oPixel4;
+	float 			fNoiseN1;
+	float 			fNoiseN0;
+	float			fNoise;
+	float2 			fPosition2;
+	float 			fFrameN1;
+	float 			fFrameN0;
+	float			fFrame;
+	
+	fFrame			= 	elapsed_time * 60.0 * (fIntensity*fIntensity);
+	fFrameN0		= 	floor(fFrame);
+	fFrameN1		=	fFrameN0 + 1;
+	fPosition2 		= 	v_in.uv * 2560.0;
+	
+
+	fRandomValue 	= 	hashGet(fPosition2 + fFrameN0 * 19.19);
+	fRandomValue 	+= 	hashGet(fPosition2 + fFrameN0 * 2 + fRandomValue);
+	fRandomValue 	+= 	hashGet(fPosition2 + fFrameN0 * 1.370 + 11.0 + fRandomValue);
+	fRandomValue 	+= 	hashGet(fPosition2 + fFrameN0 * 1.910 + 23.0 + fRandomValue);
+	fRandomValue 	= 	fRandomValue * 0.25;
+	fNoiseN0 		= 	(fRandomValue - 0.5);
+		
+	
+	fRandomValue 	= 	hashGet(fPosition2 + fFrameN1 * 19.19);
+	fRandomValue 	+= 	hashGet(fPosition2 + fFrameN1 * 2 + fRandomValue);
+	fRandomValue 	+= 	hashGet(fPosition2 + fFrameN1 * 1.370 + 11.0 + fRandomValue);
+	fRandomValue 	+= 	hashGet(fPosition2 + fFrameN1 * 1.910 + 23.0 + fRandomValue);
+	fRandomValue 	= 	fRandomValue * 0.25;
+	fNoiseN1 		= 	(fRandomValue - 0.5);
+	
+	
+	fNoise 			= 	lerp ( fNoiseN0, fNoiseN1, frac(fFrame) );
+	oPixel4.rgb 	= 	0.5 + fNoise;
+	oPixel4.a 		= 	(fAlpha*fAlpha*2.0);
+    return saturate(oPixel4);
+}
+
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader  = mainImage(v_in);
+	}
+}
